@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crystal Archive Premium</title>
+    <style>
+        :root {
+            --accent: #e1b382; /* Премиальное золото */
+            --glass: rgba(10, 12, 18, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text: #e0e0e0;
+        }
+
+        body, html {
+            margin: 0; padding: 0; height: 100vh; width: 100vw;
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #050505; color: var(--text); overflow: hidden;
+        }
+
+        /* Живой фон */
+        #bg-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+
+        .main-frame {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 96%; max-width: 1400px; height: 90vh;
+            background: var(--glass); backdrop-filter: blur(50px); -webkit-backdrop-filter: blur(50px);
+            border-radius: 32px; border: 1px solid var(--glass-border);
+            display: grid; grid-template-columns: 240px 1fr 260px;
+            grid-template-rows: 60px 1fr; box-shadow: 0 50px 120px rgba(0,0,0,0.8);
+            overflow: hidden; background-clip: padding-box;
+        }
+
+        /* Шапка */
+        .header {
+            grid-column: 1 / 4; background: rgba(0,0,0,0.4);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex; align-items: center; padding: 0 25px; justify-content: space-between;
+        }
+
+        .search-input {
+            background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);
+            border-radius: 10px; color: white; padding: 8px 15px; width: 300px; outline: none;
+            font-size: 0.8rem; transition: 0.3s;
+        }
+        .search-input:focus { border-color: var(--accent); width: 350px; }
+
+        #sync-indicator { font-size: 10px; letter-spacing: 2px; color: var(--accent); opacity: 0; transition: 0.5s; text-transform: uppercase; }
+
+        /* Панели управления */
+        .panel { padding: 25px 15px; display: flex; flex-direction: column; background: rgba(0,0,0,0.2); }
+        .list-container { flex: 1; overflow-y: auto; margin: 15px 0; }
+        .nav-label { font-size: 9px; letter-spacing: 3px; opacity: 0.4; text-transform: uppercase; margin-bottom: 10px; }
+
+        .item-node {
+            padding: 12px; border-radius: 12px; margin-bottom: 8px; cursor: pointer;
+            background: rgba(255,255,255,0.02); border: 1px solid transparent;
+            display: flex; justify-content: space-between; align-items: center; transition: 0.3s;
+        }
+        .item-node:hover { background: rgba(255,255,255,0.06); transform: scale(1.02); }
+        .item-node.active { background: rgba(225, 179, 130, 0.12); border-color: var(--accent); }
+
+        .name-input { background: transparent; border: none; color: inherit; width: 85%; outline: none; font-size: 0.85rem; }
+
+        /* Редактор */
+        .editor-container { display: flex; flex-direction: column; background: rgba(255,255,255,0.01); position: relative; }
+        
+        .toolbar {
+            padding: 10px 30px; display: flex; gap: 15px; background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid var(--glass-border);
+        }
+        .tool-btn { background: transparent; border: none; color: white; cursor: pointer; font-size: 14px; opacity: 0.6; }
+        .tool-btn:hover { opacity: 1; color: var(--accent); }
+
+        #editor { 
+            flex: 1; outline: none; font-size: 1.25rem; line-height: 1.8; color: #fff; 
+            padding: 50px; overflow-y: auto;
+            background: linear-gradient(135deg, rgba(15, 18, 30, 0.4) 0%, rgba(30, 18, 15, 0.4) 100%);
+            box-shadow: inset 0 0 80px rgba(0,0,0,0.3);
+        }
+
+        .btn-add {
+            padding: 12px; border-radius: 12px; background: transparent;
+            border: 1px solid var(--accent); color: var(--accent);
+            cursor: pointer; font-weight: bold; font-size: 10px; text-transform: uppercase;
+        }
+        .btn-add:hover { background: var(--accent); color: black; }
+
+        /* Результаты поиска */
+        #search-results {
+            position: absolute; top: 55px; left: 150px; width: 350px; background: #111218;
+            border: 1px solid var(--accent); border-radius: 12px; z-index: 1000;
+            display: none; max-height: 300px; overflow-y: auto;
+        }
+        .res-item { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; font-size: 0.8rem; }
+        .res-item:hover { background: rgba(255,255,255,0.05); }
+
+        .del-btn { opacity: 0.2; transition: 0.2s; font-style: normal; }
+        .item-node:hover .del-btn { opacity: 1; color: #ff4444; }
+
+        ::-webkit-scrollbar { width: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div class="main-frame">
+    <div class="header">
+        <span style="font-weight: 900; letter-spacing: 3px; color: var(--accent); font-size: 0.8rem;">CRYSTAL ARCHIVE</span>
+        <div style="position: relative;">
+            <input type="text" class="search-input" id="search" placeholder="Поиск в глубине архива..." oninput="search()">
+            <div id="search-results"></div>
+        </div>
+        <div id="sync-indicator">Syncing...</div>
+    </div>
+
+    <!-- ТОМА (ГЛАВЫ) -->
+    <div class="panel" style="border-right: 1px solid var(--glass-border);">
+        <div class="nav-label">Collections</div>
+        <div id="ch-list" class="list-container"></div>
+        <button class="btn-add" onclick="addCh()">+ Глава</button>
+    </div>
+
+    <!-- РЕДАКТОР -->
+    <div class="editor-container">
+        <div class="toolbar">
+            <button class="tool-btn" onclick="exec('bold')">B</button>
+            <button class="tool-btn" onclick="exec('italic')">I</button>
+            <button class="tool-btn" onclick="exec('underline')">U</button>
+            <button class="tool-btn" onclick="exec('foreColor', '#e1b382')">Gold</button>
+            <button class="tool-btn" onclick="document.getElementById('up').click()">+ Photo</button>
+            <input type="file" id="up" style="display:none" onchange="upload(this)">
+        </div>
+        <div id="editor" contenteditable="true" spellcheck="false" oninput="triggerSave()"></div>
+    </div>
+
+    <!-- СТРАНИЦЫ (ЛИСТЫ) -->
+    <div class="panel" style="border-left: 1px solid var(--glass-border);">
+        <div class="nav-label">Contents</div>
+        <div id="pg-list" class="list-container"></div>
+        <button class="btn-add" onclick="addPg()">+ Лист</button>
+    </div>
+</div>
+
+<script>
+    // --- ДИНАМИЧЕСКИЙ ФОН ---
+    const cvs = document.getElementById('bg-canvas');
+    const ctx = cvs.getContext('2d');
+    let pts = [];
+    function res() { cvs.width = window.innerWidth; cvs.height = window.innerHeight; }
+    window.onresize = res; res();
+    class P {
+        constructor() { this.x=Math.random()*cvs.width; this.y=Math.random()*cvs.height; this.v=Math.random()*0.15; this.o=Math.random(); }
+        draw() { this.y-=this.v; if(this.y<0)this.y=cvs.height; ctx.globalAlpha=this.o; ctx.fillStyle='#e1b382'; ctx.beginPath(); ctx.arc(this.x,this.y,1,0,7); ctx.fill(); }
+    }
+    for(let i=0;i<120;i++) pts.push(new P());
+    function anim() { 
+        let g = ctx.createLinearGradient(0,0,0,cvs.height);
+        g.addColorStop(0,'#050508'); g.addColorStop(1,'#101015');
+        ctx.fillStyle=g; ctx.fillRect(0,0,cvs.width,cvs.height); 
+        pts.forEach(p=>p.draw()); requestAnimationFrame(anim); 
+    }
+    anim();
+
+    // --- ЛОГИКА ---
+    let db = JSON.parse(localStorage.getItem('premium_v10')) || [
+        { id: Date.now(), title: 'Том I', pages: [{ id: Date.now()+1, title: 'Лист 1', content: 'Ваш идеальный архив.' }] }
+    ];
+    let curCh = db[0].id, curPg = db[0].pages[0].id;
+    let saveTime;
+
+    function render() {
+        // Главы
+        document.getElementById('ch-list').innerHTML = db.map(ch => `
+            <div class="item-node ${ch.id === curCh ? 'active' : ''}" onclick="selectCh(${ch.id})">
+                <input class="name-input" value="${ch.title}" onchange="rename(${ch.id}, this.value, 'ch')" onclick="event.stopPropagation()">
+                <i class="del-btn" onclick="del(${ch.id}, 'ch', event)">✕</i>
+            </div>
+        `).join('');
+
+        // Страницы
+        const ch = db.find(c => c.id === curCh) || db[0];
+        document.getElementById('pg-list').innerHTML = ch.pages.map(p => `
+            <div class="item-node ${p.id === curPg ? 'active' : ''}" onclick="selectPg(${p.id})">
+                <input class="name-input" value="${p.title}" onchange="rename(${p.id}, this.value, 'pg')" onclick="event.stopPropagation()">
+                <i class="del-btn" onclick="del(${p.id}, 'pg', event)">✕</i>
+            </div>
+        `).join('');
+
+        const pg = ch.pages.find(p => p.id === curPg) || ch.pages[0];
+        document.getElementById('editor').innerHTML = pg ? pg.content : '';
+        if(pg) curPg = pg.id;
+    }
+
+    function triggerSave() {
+        const ind = document.getElementById('sync-indicator');
+        ind.style.opacity = 1; ind.innerText = "Syncing...";
+        clearTimeout(saveTime);
+        saveTime = setTimeout(() => {
+            const ch = db.find(c => c.id === curCh);
+            const pg = ch?.pages.find(p => p.id === curPg);
+            if(pg) pg.content = document.getElementById('editor').innerHTML;
+            localStorage.setItem('premium_v10', JSON.stringify(db));
+            ind.innerText = "Synced";
+            setTimeout(() => ind.style.opacity = 0, 1000);
+        }, 800);
+    }
+
+    function selectCh(id) { saveNow(); curCh = id; curPg = db.find(c=>c.id===id).pages[0].id; render(); }
+    function selectPg(id) { saveNow(); curPg = id; render(); }
+
+    function addCh() {
+        const id = Date.now();
+        db.push({ id, title: 'Новый Том', pages: [{ id: id+1, title: 'Лист 1', content: '' }] });
+        selectCh(id);
+    }
+
+    function addPg() {
+        const ch = db.find(c => c.id === curCh);
+        const id = Date.now();
+        ch.pages.push({ id, title: 'Новый Лист', content: '' });
+        selectPg(id);
+    }
+
+    function rename(id, val, type) {
+        if(type==='ch') db.find(c=>c.id===id).title = val;
+        else db.find(c=>c.id===curCh).pages.find(p=>p.id===id).title = val;
+        saveNow();
+    }
+
+    function del(id, type, e) {
+        e.stopPropagation();
+        if(type==='ch' && db.length > 1) { db = db.filter(c => c.id !== id); curCh = db[0].id; curPg = db[0].pages[0].id; }
+        else if(type==='pg') {
+            const ch = db.find(c => c.id === curCh);
+            if(ch.pages.length > 1) { ch.pages = ch.pages.filter(p => p.id !== id); curPg = ch.pages[0].id; }
+        }
+        saveNow(); render();
+    }
+
+    function search() {
+        const q = document.getElementById('search').value.toLowerCase();
+        const res = document.getElementById('search-results');
+        if(q.length < 2) { res.style.display = 'none'; return; }
+        let found = [];
+        db.forEach(ch => ch.pages.forEach(p => {
+            if(p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q))
+                found.push({ chId: ch.id, pgId: p.id, title: `${ch.title} > ${p.title}` });
+        }));
+        if(found.length) {
+            res.style.display = 'block';
+            res.innerHTML = found.map(f => `<div class="res-item" onclick="go(${f.chId}, ${f.pgId})">${f.title}</div>`).join('');
+        } else res.style.display = 'none';
+    }
+
+    function go(cid, pid) { curCh = cid; curPg = pid; document.getElementById('search-results').style.display='none'; document.getElementById('search').value=''; render(); }
+    function saveNow() { localStorage.setItem('premium_v10', JSON.stringify(db)); }
+    function exec(c, v=null) { document.execCommand(c, false, v); document.getElementById('editor').focus(); }
+    function upload(i) { if(i.files) { const r=new FileReader(); r.onload=e=>exec('insertImage', e.target.result); r.readAsDataURL(i.files); } }
+
+    render();
+</script>
+</body>
+</html>
